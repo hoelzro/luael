@@ -3,3 +3,5 @@ el.so: el.o
 
 el.o: el.c
 	gcc -c el.c -fPIC -I/opt/local/include
+clean:
+	rm -f *.o *.so
