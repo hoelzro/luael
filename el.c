@@ -32,7 +32,38 @@
 #define LIB_NAME "el"
 #define LUA_PUSHERROR(L) lua_pushnil(L); lua_pushstring(L, strerror(errno))
 
+#define tofilep(L, narg) ((FILE **)luaL_checkudata((L), (narg), LUA_FILEHANDLE))
+
 static EditLine *el = NULL;
+static int callbacks_ref = LUA_NOREF;
+static int luael_init(lua_State *);
+
+static char *_run_prompt_fn(EditLine *_el)
+{
+    lua_State *L;
+    int status;
+    const char *result;
+
+    el_get(_el, EL_CLIENTDATA, &L);
+    lua_rawgeti(L, LUA_REGISTRYINDEX, callbacks_ref);
+    lua_getfield(L, -1, "prompt");
+    status = lua_pcall(L, 0, 1, 0);
+    /*# what to do on error? */
+    result = lua_tostring(L, -1);
+    /*# what to do on error? */
+    lua_pop(L, 2);
+
+    /*# should this string be in Lua memory? */
+    return (char *) result;
+}
+
+static void check_el_inited(lua_State *L)
+{
+    if(! el) {
+	lua_pushcfunction(L, luael_init);
+	lua_call(L, 0, 0);
+    }
+}
 
 static int luael_init(lua_State *L)
 {
@@ -67,18 +98,14 @@ static int luael_init(lua_State *L)
 
     elp = lua_newuserdata(L, sizeof(EditLine *));
     el = *elp = el_init(prog, fin, fout, ferr);
+    el_set(el, EL_CLIENTDATA, L);
     luaL_getmetatable(L, LUA_EDITLINE);
     lua_setmetatable(L, -2);
     luaL_ref(L, LUA_REGISTRYINDEX);
-    return 0;
-}
+    lua_newtable(L);
+    callbacks_ref = luaL_ref(L, LUA_REGISTRYINDEX);
 
-static void check_el_inited(lua_State *L)
-{
-    if(! el) {
-	lua_pushcfunction(L, luael_init);
-	lua_call(L, 0, 0);
-    }
+    return 0;
 }
 
 static int luael_gets(lua_State *L)
@@ -127,6 +154,148 @@ static int luael_push(lua_State *L)
     return 0;
 }
 
+#define cond_init() if(0) { }
+#define is(value) else if(! strcmp(param, value))
+
+/*# error handling */
+static int luael_set(lua_State *L)
+{
+    const char *param = luaL_checkstring(L, 1);
+
+    check_el_inited(L);
+    cond_init()
+    is("prompt") {
+        if(lua_isnoneornil(L, 2)) {
+            lua_rawgeti(L, LUA_REGISTRYINDEX, callbacks_ref);
+            lua_pushnil(L);
+            lua_setfield(L, -2, "prompt");
+            el_set(el, EL_PROMPT, NULL);
+        } else {
+            luaL_checktype(L, 2, LUA_TFUNCTION);
+            lua_rawgeti(L, LUA_REGISTRYINDEX, callbacks_ref);
+            lua_pushvalue(L, 2);
+            lua_setfield(L, -2, "prompt");
+            el_set(el, EL_PROMPT, _run_prompt_fn);
+        }
+    }
+    is("promptesc") {
+        luaL_checktype(L, 2, LUA_TFUNCTION);
+    }
+    is("refresh") {
+        el_set(el, EL_REFRESH);
+    }
+    is("rprompt") {
+        luaL_checktype(L, 2, LUA_TFUNCTION);
+    }
+    is("rpromptesc") {
+        luaL_checktype(L, 2, LUA_TFUNCTION);
+    }
+    is("terminal") {
+        const char *term = luaL_checkstring(L, 2);
+        el_set(el, EL_TERMINAL, term);
+    }
+    is("editor") {
+        const char *editor = luaL_checkstring(L, 2);
+        el_set(el, EL_EDITOR, editor);
+    }
+    is("signal") {
+        int signal;
+        luaL_checktype(L, 2, LUA_TBOOLEAN);
+        signal = lua_toboolean(L, 2);
+        el_set(el, EL_SIGNAL, signal);
+    }
+    is("bind") {
+        /* use el_parse */
+    }
+    is("echotc") {
+        /* use el_parse */
+    }
+    is("settc") {
+        /* use el_parse */
+    }
+    is("setty") {
+        /* use el_parse */
+    }
+    is("telltc") {
+        /* use el_parse */
+    }
+    is("addfn") {
+        const char *name, *help;
+
+        name = luaL_checkstring(L, 2);
+        help = luaL_checkstring(L, 3);
+        luaL_checktype(L, 4, LUA_TFUNCTION);
+    }
+    is("hist") {
+        return luaL_error(L, "history functions not implemented yet!");
+    }
+    is("editmode") {
+        int flag;
+
+        luaL_checktype(L, 2, LUA_TBOOLEAN);
+        flag = lua_toboolean(L, 2);
+        el_set(el, EL_EDITMODE, flag);
+    }
+    is("getcfn") {
+        luaL_checktype(L, 2, LUA_TFUNCTION);
+    }
+    is("fp") {
+        int fd;
+        FILE **fp;
+
+        fd = luaL_checkinteger(L, 2);
+        fp = tofilep(L, 3);
+        if(*fp == NULL) {
+            return luaL_error(L, "attempt to use a closed file");
+        }
+        el_set(el, EL_SETFP, fd, *fp);
+    }
+    else {
+        return luaL_error(L, "Invalid parameter '%s' provided to el.set", param);
+    }
+
+    return 0;
+}
+
+/*# error handling */
+static int luael_get(lua_State *L)
+{
+    const char *param = luaL_checkstring(L, 1);
+
+    check_el_inited(L);
+    cond_init()
+    is("prompt") {
+        lua_rawgeti(L, LUA_REGISTRYINDEX, callbacks_ref);
+        lua_getfield(L, -1, "prompt");
+        return 1;
+    }
+    is("rprompt") {
+    }
+    is("editor") {
+        const char *editor = NULL;
+        el_get(el, EL_EDITOR, &editor);
+        lua_pushstring(L, editor);
+        return 1;
+    }
+    is("gettc") {
+    }
+    is("signal") {
+    }
+    is("editmode") {
+    }
+    is("getcfn") {
+    }
+    is("unbuffered") {
+    }
+    is("prepterm") {
+    }
+    is("fp") {
+    }
+    return 0;
+}
+#undef cond_init
+#undef is
+
 static int _el_gc(lua_State *L)
 {
     EditLine **elp = (EditLine **) luaL_checkudata(L, -1, LUA_EDITLINE);
@@ -139,6 +308,8 @@ static luaL_Reg luael_functions[] = {
     { "gets", luael_gets },
     { "getc", luael_getc },
     { "push", luael_push },
+    { "set", luael_set },
+    { "get", luael_get },
     { NULL, NULL }
 };
 
