@@ -178,6 +178,7 @@ static int luael_push(lua_State *L)
 
 /*# error handling */
 /* prompt/rprompt with extra argument as synonym for promptesc/rpromptesc? */
+/*# refactor get/set booleans? refactor set prompts? */
 static int luael_set(lua_State *L)
 {
     const char *param = luaL_checkstring(L, 1);
@@ -350,12 +351,27 @@ static int luael_get(lua_State *L)
     is("gettc") {
     }
     is("signal") {
+        int signal;
+
+        el_get(el, EL_SIGNAL, &signal);
+        lua_pushboolean(L, signal);
+        return 1;
     }
     is("editmode") {
+        int flag;
+
+        el_get(el, EL_EDITMODE, &flag);
+        lua_pushboolean(L, flag);
+        return 1;
     }
     is("getcfn") {
     }
     is("unbuffered") {
+        int unbuffered;
+
+        el_get(el, EL_UNBUFFERED, &unbuffered);
+        lua_pushboolean(L, unbuffered);
+        return 1;
     }
     is("prepterm") {
     }
