@@ -179,7 +179,25 @@ static int luael_set(lua_State *L)
         }
     }
     is("promptesc") {
-        luaL_checktype(L, 2, LUA_TFUNCTION);
+        if(lua_isnoneornil(L, 2)) {
+            lua_rawgeti(L, LUA_REGISTRYINDEX, callbacks_ref);
+            lua_pushnil(L);
+            lua_setfield(L, -2, "prompt");
+            el_set(el, EL_PROMPT_ESC, NULL);
+        } else {
+            const char *c;
+
+            luaL_checktype(L, 2, LUA_TFUNCTION);
+            c = luaL_checkstring(L, 3);
+            if(strlen(c) != 1) {
+                return luaL_error(L, "string '%s' is longer than one character", c);
+            }
+
+            lua_rawgeti(L, LUA_REGISTRYINDEX, callbacks_ref);
+            lua_pushvalue(L, 2);
+            lua_setfield(L, -2, "prompt");
+            el_set(el, EL_PROMPT_ESC, _run_prompt_fn, *c);
+        }
     }
     is("refresh") {
         el_set(el, EL_REFRESH);
