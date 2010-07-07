@@ -1,4 +1,4 @@
-Luaed is a libedit binding for, you guessed it, Lua.
+Luael is a libedit binding for, you guessed it, Lua.
 
 Why?
 ----
