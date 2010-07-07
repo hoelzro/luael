@@ -57,6 +57,25 @@ static char *_run_prompt_fn(EditLine *_el)
     return (char *) result;
 }
 
+static char *_run_rprompt_fn(EditLine *_el)
+{
+    lua_State *L;
+    int status;
+    const char *result;
+
+    el_get(_el, EL_CLIENTDATA, &L);
+    lua_rawgeti(L, LUA_REGISTRYINDEX, callbacks_ref);
+    lua_getfield(L, -1, "rprompt");
+    status = lua_pcall(L, 0, 1, 0);
+    /*# what to do on error? */
+    result = lua_tostring(L, -1);
+    /*# what to do on error? */
+    lua_pop(L, 2);
+
+    /*# should this string be in Lua memory? */
+    return (char *) result;
+}
+
 static void check_el_inited(lua_State *L)
 {
     if(! el) {
@@ -158,6 +177,7 @@ static int luael_push(lua_State *L)
 #define is(value) else if(! strcmp(param, value))
 
 /*# error handling */
+/* prompt/rprompt with extra argument as synonym for promptesc/rpromptesc? */
 static int luael_set(lua_State *L)
 {
     const char *param = luaL_checkstring(L, 1);
@@ -203,10 +223,39 @@ static int luael_set(lua_State *L)
         el_set(el, EL_REFRESH);
     }
     is("rprompt") {
-        luaL_checktype(L, 2, LUA_TFUNCTION);
+        if(lua_isnoneornil(L, 2)) {
+            lua_rawgeti(L, LUA_REGISTRYINDEX, callbacks_ref);
+            lua_pushnil(L);
+            lua_setfield(L, -2, "rprompt");
+            el_set(el, EL_RPROMPT, NULL);
+        } else {
+            luaL_checktype(L, 2, LUA_TFUNCTION);
+            lua_rawgeti(L, LUA_REGISTRYINDEX, callbacks_ref);
+            lua_pushvalue(L, 2);
+            lua_setfield(L, -2, "rprompt");
+            el_set(el, EL_RPROMPT, _run_rprompt_fn);
+        }
     }
     is("rpromptesc") {
-        luaL_checktype(L, 2, LUA_TFUNCTION);
+        if(lua_isnoneornil(L, 2)) {
+            lua_rawgeti(L, LUA_REGISTRYINDEX, callbacks_ref);
+            lua_pushnil(L);
+            lua_setfield(L, -2, "rprompt");
+            el_set(el, EL_RPROMPT_ESC, NULL);
+        } else {
+            const char *c;
+
+            luaL_checktype(L, 2, LUA_TFUNCTION);
+            c = luaL_checkstring(L, 3);
+            if(strlen(c) != 1) {
+                return luaL_error(L, "string '%s' is longer than one character", c);
+            }
+
+            lua_rawgeti(L, LUA_REGISTRYINDEX, callbacks_ref);
+            lua_pushvalue(L, 2);
+            lua_setfield(L, -2, "rprompt");
+            el_set(el, EL_RPROMPT_ESC, _run_rprompt_fn, *c);
+        }
     }
     is("terminal") {
         const char *term = luaL_checkstring(L, 2);
@@ -288,6 +337,9 @@ static int luael_get(lua_State *L)
         return 1;
     }
     is("rprompt") {
+        lua_rawgeti(L, LUA_REGISTRYINDEX, callbacks_ref);
+        lua_getfield(L, -1, "rprompt");
+        return 1;
     }
     is("editor") {
         const char *editor = NULL;
